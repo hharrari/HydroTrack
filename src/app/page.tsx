@@ -89,7 +89,7 @@ export default function Home() {
     return <LoadingSkeleton />;
   }
 
-  const quickAddAmounts = profile.units === "oz" ? [8, 16, 24] : [250, 500, 750];
+  const quickAddAmounts = profile.units === "oz" ? [8, 16] : [250, 500];
 
   return (
     <>
