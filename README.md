@@ -2,7 +2,7 @@
 
 This is a Next.js application to track daily water intake, built with Firebase.
 
-## Setup
+## Setup##
 
 1.  Create a Firebase project at [firebase.google.com](https://firebase.google.com).
 2.  In your project, go to "Build" > "Authentication" and enable the "Email/Password" sign-in provider.
