@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@/firebase";
+import { useUser, useFirebase } from "@/firebase";
 import { getProfile, getDailySummary, logWater } from "@/lib/firestore";
 import type { UserProfile, DailySummary } from "@/types";
 import { Header } from "@/components/header";
@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Bot, GlassWater, Plus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useFirebase } from "@/firebase";
+import { ReminderManager } from "@/components/reminder-manager";
 
 export default function Home() {
   const { user, isUserLoading } = useUser();
@@ -179,6 +179,9 @@ export default function Home() {
         units={profile.units}
         onLog={handleLogWater}
       />
+      {profile && user && (
+        <ReminderManager profile={profile} userId={user.uid} />
+      )}
     </>
   );
 }

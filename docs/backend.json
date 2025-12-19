@@ -26,13 +26,23 @@
             "ml",
             "oz"
           ]
+        },
+        "remindersEnabled": {
+          "type": "boolean",
+          "description": "Whether the user has enabled hydration reminders."
+        },
+        "reminderHours": {
+          "type": "number",
+          "description": "The interval in hours for sending hydration reminders."
         }
       },
       "required": [
         "id",
         "email",
         "dailyGoal",
-        "units"
+        "units",
+        "remindersEnabled",
+        "reminderHours"
       ]
     },
     "WaterLog": {

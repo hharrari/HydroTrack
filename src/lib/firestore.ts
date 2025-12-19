@@ -47,6 +47,8 @@ export async function getProfile(firestore: Firestore, uid: string): Promise<Use
       email: '', // email will be set on creation
       dailyGoal: DEFAULT_GOAL,
       units: DEFAULT_UNITS,
+      remindersEnabled: false,
+      reminderHours: 2,
     };
     setDocumentNonBlocking(userDocRef, newProfile, { merge: false });
     return newProfile;

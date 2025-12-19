@@ -4,6 +4,8 @@ export interface UserProfile {
   email: string;
   dailyGoal: number;
   units: "ml" | "oz";
+  remindersEnabled: boolean;
+  reminderHours: number;
 }
 
 export interface DailySummary {
