@@ -92,6 +92,8 @@ export async function getDailySummary(firestore: Firestore, uid: string): Promis
     // First, get the user's current goal.
     const userProfile = await getProfile(firestore, uid);
     const newSummary: DailySummary = {
+      id: todayStr,
+      userId: uid,
       totalIntake: 0,
       goal: userProfile.dailyGoal,
       date: todayStr,
@@ -131,7 +133,9 @@ export async function logWater(firestore: Firestore, uid: string, amount: number
 
       const newTotalIntake = currentIntake + amount;
       
-      const updatedSummaryData = { 
+      const updatedSummaryData: DailySummary = { 
+        id: todayStr,
+        userId: uid,
         totalIntake: newTotalIntake, 
         goal: currentGoal,
         date: todayStr
@@ -140,6 +144,7 @@ export async function logWater(firestore: Firestore, uid: string, amount: number
       // Set/update summary and add new log entry
       transaction.set(summaryDocRef, updatedSummaryData, { merge: true });
       transaction.set(newLogRef, {
+        userId: uid,
         amount,
         timestamp: serverTimestamp(),
       });
