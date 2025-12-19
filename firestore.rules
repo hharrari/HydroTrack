@@ -1,0 +1,136 @@
+/**
+ * Core Philosophy: This ruleset enforces a strict, user-centric data ownership model. All data, including hydration
+ * logs and daily summaries, is stored in subcollections under a user's primary document. Access is granted only to the
+ * authenticated owner of that data tree, ensuring complete privacy and isolation between users.
+ *
+ * Data Structure: The data is organized hierarchically under the `/users/{userId}` path. Each user owns their profile
+ * document and two subcollections: `/waterLogs` for individual intake entries and `/dailySummaries` for aggregated daily
+ * totals. This structure is highly optimized for simple, performant security rules.
+ *
+ * Key Security Decisions:
+ * - Default Deny: All paths are closed by default. Access is explicitly granted on a per-collection basis.
+ * - No Public Access: There are no publicly readable collections. A user must be authenticated to access any data.
+ * - No User Enumeration: Listing the top-level `/users` collection is disallowed to prevent leaking user information.
+ * - Strict Ownership: A user can only read or write data within their own path (`/users/{request.auth.uid}/...`).
+ *
+ * Denormalization for Authorization: The hierarchical structure implicitly denormalizes the `userId` into the path of every
+ * document. This is the most efficient pattern for authorization, as it allows rules to grant access based solely on the
+ * path without needing to read document data (`get()` calls). For create/update operations, rules ensure that any internal
+ * `userId` or `id` fields match the path, guaranteeing relational integrity.
+ *
+ * Structural Segregation: The design correctly segregates each user's data into their own document tree, which is a
+ * best practice for security and query performance, especially for listing a user's own items.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Helper Functions
+    // -------------------------------------------------------------------------
+
+    /**
+     * Checks if a user is authenticated.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks if the currently signed-in user's UID matches the requested userId.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * Verifies ownership for an existing document. Used for update/delete operations.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * On create, validates that the new User document's internal 'id' field
+     * matches the document ID in the path, ensuring relational integrity.
+     */
+    function hasCorrectProfileIdOnCreate(userId) {
+      return request.resource.data.id == userId;
+    }
+
+    /**
+     * On update, ensures the User document's 'id' field cannot be changed.
+     */
+    function isProfileIdImmutableOnUpdate() {
+      return request.resource.data.id == resource.data.id;
+    }
+
+    /**
+     * On create, validates that a subcollection document's internal 'userId' field
+     * matches the user ID in the path, enforcing the ownership link.
+     */
+    function hasCorrectOwnerIdOnCreate(userId) {
+      return request.resource.data.userId == userId;
+    }
+
+    /**
+     * On update, ensures a subcollection document's 'userId' field is immutable.
+     */
+    function isOwnerIdImmutableOnUpdate() {
+      return request.resource.data.userId == resource.data.userId;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Rules
+    // -------------------------------------------------------------------------
+
+    /**
+     * @description Controls access to a user's own profile document.
+     * @path /users/{userId}
+     * @allow (get) An authenticated user reads their own profile.
+     * @allow (create) A new user creates their own profile document.
+     * @deny (list) No user can list all documents in the `/users` collection.
+     * @deny (update) An authenticated user tries to modify another user's profile.
+     * @principle Restricts access to a user's own data tree and prevents user enumeration.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && hasCorrectProfileIdOnCreate(userId);
+      allow update: if isExistingOwner(userId) && isProfileIdImmutableOnUpdate();
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Secures a user's private collection of water intake logs.
+     * @path /users/{userId}/waterLogs/{waterLogId}
+     * @allow (get, list, create, update, delete) An authenticated user manages their own water logs.
+     * @deny (get) A user attempts to read another user's water log.
+     * @deny (create) A user attempts to create a water log under another user's profile.
+     * @principle Enforces strict data ownership within a user's private subcollection.
+     */
+    match /users/{userId}/waterLogs/{waterLogId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && hasCorrectOwnerIdOnCreate(userId);
+      allow update: if isExistingOwner(userId) && isOwnerIdImmutableOnUpdate();
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Secures a user's private collection of daily water intake summaries.
+     * @path /users/{userId}/dailySummaries/{dailySummaryId}
+     * @allow (get, list, create, update, delete) An authenticated user manages their own daily summaries.
+     * @deny (list) A user attempts to list another user's daily summaries.
+     * @deny (update) A user attempts to update another user's daily summary.
+     * @principle Enforces strict data ownership within a user's private subcollection.
+     */
+    match /users/{userId}/dailySummaries/{dailySummaryId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && hasCorrectOwnerIdOnCreate(userId);
+      allow update: if isExistingOwner(userId) && isOwnerIdImmutableOnUpdate();
+      allow delete: if isExistingOwner(userId);
+    }
+  }
+}

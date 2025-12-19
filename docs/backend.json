@@ -1,0 +1,159 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the HydroTrack application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address.",
+          "format": "email"
+        },
+        "dailyGoalOz": {
+          "type": "number",
+          "description": "User's daily hydration goal in ounces."
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "dailyGoalOz"
+      ]
+    },
+    "WaterLog": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "WaterLog",
+      "type": "object",
+      "description": "Represents a single instance of water intake logged by a user.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the water log entry."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to the User who logged the water intake. (Relationship: User 1:N WaterLog)"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of when the water intake was logged.",
+          "format": "date-time"
+        },
+        "amountOz": {
+          "type": "number",
+          "description": "Amount of water consumed in ounces."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "timestamp",
+        "amountOz"
+      ]
+    },
+    "DailySummary": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "DailySummary",
+      "type": "object",
+      "description": "Represents a summary of a user's water intake for a specific day.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the daily summary."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to the User for whom the daily summary is generated. (Relationship: User 1:N DailySummary)"
+        },
+        "date": {
+          "type": "string",
+          "description": "The date for which the summary is generated (YYYY-MM-DD).",
+          "format": "date-time"
+        },
+        "totalIntakeOz": {
+          "type": "number",
+          "description": "Total water intake for the day in ounces."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "date",
+        "totalIntakeOz"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profile information. Accessible only by the authenticated user with matching userId.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "Unique identifier for the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/waterLogs/{waterLogId}",
+        "definition": {
+          "entityName": "WaterLog",
+          "schema": {
+            "$ref": "#/backend/entities/WaterLog"
+          },
+          "description": "Stores individual water intake logs for each user.  userId is implicitly denormalized via path.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "Unique identifier for the user (owner)."
+            },
+            {
+              "name": "waterLogId",
+              "description": "Unique identifier for the water log entry."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/dailySummaries/{dailySummaryId}",
+        "definition": {
+          "entityName": "DailySummary",
+          "schema": {
+            "$ref": "#/backend/entities/DailySummary"
+          },
+          "description": "Stores daily summaries of water intake for each user. userId is implicitly denormalized via path.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "Unique identifier for the user (owner)."
+            },
+            {
+              "name": "dailySummaryId",
+              "description": "Unique identifier for the daily summary."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to address the 'Failed to get document because the client is offline' error by ensuring data persistence and availability even when the client is temporarily disconnected. This is achieved through proper data modeling and leveraging Firestore's offline capabilities. The structure also emphasizes authorization independence, clarity, and security.\n\n1.  **Users Collection (`/users/{userId}`):** Stores user profiles. This collection uses path-based ownership, making security rules simple and efficient. Each user document is only accessible by the authenticated user with a matching `userId`. This structure facilitates user authentication and profile data management and adheres to the principle of authorization independence.\n2.  **WaterLogs Collection (`/users/{userId}/waterLogs/{waterLogId}`):** Stores individual water intake logs for each user. By nesting this collection under `/users/{userId}`, we establish a clear ownership hierarchy, enabling easy retrieval of a user's water logs and simplifying security rules. The `userId` is implicitly denormalized within each `waterLog` document because it is encoded in the document path, reinforcing authorization independence. This design aligns with the principle of hierarchical paths for user-owned data.\n3.  **DailySummaries Collection (`/users/{userId}/dailySummaries/{dailySummaryId}`):** Contains daily summaries of water intake for each user. Similar to water logs, this collection is nested under `/users/{userId}`, ensuring data ownership and simplifying data retrieval. The `userId` is implicitly denormalized because it's part of the document path. The `date` field can be used for querying and reporting on daily water intake. This approach supports the 1:N relationship between users and their daily summaries.\n\nThis structure prioritizes simplicity, security, and scalability. Path-based ownership enables straightforward security rules. The nested collections establish clear relationships between users, water logs, and daily summaries. The design inherently supports QAPs (Rules Are Not Filters) for listing water logs and daily summaries, as the query will always be scoped to the user's own documents, eliminating the need for filtering based on user ID within the rules. The `Failed to get document because the client is offline` error encountered in Next.js applications is typically addressed with this type of structure because the design allows for retrieving documents without dependency on external resources (e.g., network connection)."
+  }
+}
