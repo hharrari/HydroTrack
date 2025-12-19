@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/hooks/use-auth";
+import { useUser } from "@/firebase";
 import { getProfile, getDailySummary, logWater } from "@/lib/firestore";
 import type { UserProfile, DailySummary } from "@/types";
 import { Header } from "@/components/header";
@@ -12,11 +12,13 @@ import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, GlassWater, Plus, Droplet } from "lucide-react";
+import { Bot, GlassWater, Plus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useFirebase } from "@/firebase";
 
 export default function Home() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, isUserLoading } = useUser();
+  const { firestore } = useFirebase();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -28,12 +30,12 @@ export default function Home() {
   const [isLogWaterOpen, setLogWaterOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
-    if (!user) return;
+    if (!user || !firestore) return;
     try {
       setLoading(true);
       const [profileData, summaryData] = await Promise.all([
-        getProfile(user.uid),
-        getDailySummary(user.uid),
+        getProfile(firestore, user.uid),
+        getDailySummary(firestore, user.uid),
       ]);
       setProfile(profileData);
       setSummary(summaryData);
@@ -47,22 +49,22 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [user, toast]);
+  }, [user, firestore, toast]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (!isUserLoading && !user) {
       router.push("/login");
     }
-  }, [user, authLoading, router]);
+  }, [user, isUserLoading, router]);
 
   useEffect(() => {
-    if (user) {
+    if (user && firestore) {
       fetchData();
     }
-  }, [user, fetchData]);
+  }, [user, firestore, fetchData]);
 
   const handleLogWater = async (amount: number) => {
-    if (!user || !summary || !profile) return;
+    if (!user || !summary || !profile || !firestore) return;
     const amountInMl =
       profile.units === "oz" ? Math.round(amount * 29.5735) : amount;
 
@@ -72,8 +74,10 @@ export default function Home() {
     );
 
     try {
-      const newSummary = await logWater(user.uid, amountInMl);
-      setSummary(newSummary);
+      const newSummary = await logWater(firestore, user.uid, amountInMl);
+      if (newSummary) {
+        setSummary(newSummary);
+      }
     } catch (error) {
       console.error("Error logging water:", error);
       setSummary(oldSummary);
@@ -85,7 +89,7 @@ export default function Home() {
     }
   };
 
-  if (authLoading || loading || !profile || !summary) {
+  if (isUserLoading || loading || !profile || !summary) {
     return <LoadingSkeleton />;
   }
 

@@ -3,10 +3,10 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-} from "firebase/auth";
-import { auth } from "@/lib/firebase";
+  initiateEmailSignUp,
+  initiateEmailSignIn,
+} from "@/firebase/non-blocking-login";
+import { useAuth } from "@/firebase";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { Loader2 } from "lucide-react";
 export function AuthForm() {
   const router = useRouter();
   const { toast } = useToast();
+  const auth = useAuth();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
@@ -29,13 +30,13 @@ export function AuthForm() {
 
     try {
       if (isSignUp) {
-        await createUserWithEmailAndPassword(auth, email, password);
+        initiateEmailSignUp(auth, email, password);
         toast({
           title: "Account Created",
           description: "Welcome! You're now logged in.",
         });
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        initiateEmailSignIn(auth, email, password);
         toast({
           title: "Signed In",
           description: "Welcome back!",

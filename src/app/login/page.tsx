@@ -3,20 +3,20 @@
 import { AuthForm } from "@/components/auth-form";
 import { Droplet } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/hooks/use-auth";
+import { useUser } from "@/firebase";
 import { useEffect } from "react";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, isUserLoading } = useUser();
 
   useEffect(() => {
-    if (!loading && user) {
+    if (!isUserLoading && user) {
       router.push("/");
     }
-  }, [user, loading, router]);
+  }, [user, isUserLoading, router]);
 
-  if (loading || user) {
+  if (isUserLoading || user) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <Droplet className="h-12 w-12 animate-pulse text-primary" />

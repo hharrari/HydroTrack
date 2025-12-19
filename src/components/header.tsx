@@ -11,8 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, useUser } from "@/firebase";
 import { useRouter } from "next/navigation";
 import { Skeleton } from "./ui/skeleton";
 
@@ -22,7 +21,8 @@ interface HeaderProps {
 }
 
 export function Header({ onSettingsClick, isLoading = false }: HeaderProps) {
-  const { user } = useAuth();
+  const auth = useAuth();
+  const { user } = useUser();
   const router = useRouter();
 
   const handleSignOut = async () => {

@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAuth } from "@/hooks/use-auth";
+import { useUser, useFirebase } from "@/firebase";
 import { updateProfile } from "@/lib/firestore";
 import type { UserProfile } from "@/types";
 import { useToast } from "@/hooks/use-toast";
@@ -38,7 +38,8 @@ export function SettingsDialog({
   currentProfile,
   onUpdate,
 }: SettingsDialogProps) {
-  const { user } = useAuth();
+  const { user } = useUser();
+  const { firestore } = useFirebase();
   const { toast } = useToast();
   const [goal, setGoal] = useState(currentProfile.dailyGoal);
   const [units, setUnits] = useState<"ml" | "oz">(currentProfile.units);
@@ -50,11 +51,11 @@ export function SettingsDialog({
   }, [currentProfile]);
 
   const handleSave = async () => {
-    if (!user) return;
+    if (!user || !firestore) return;
     setIsLoading(true);
     try {
       const newProfileData: Partial<UserProfile> = { dailyGoal: goal, units };
-      await updateProfile(user.uid, newProfileData);
+      await updateProfile(firestore, user.uid, newProfileData);
       onUpdate({ ...currentProfile, ...newProfileData });
       toast({
         title: "Settings Saved",

@@ -6,11 +6,14 @@ import {
   runTransaction,
   serverTimestamp,
   collection,
-  writeBatch
+  writeBatch,
+  Firestore,
 } from "firebase/firestore";
-import { db } from "./firebase";
 import { getTodayDateString } from "./utils";
 import type { UserProfile, DailySummary } from "@/types";
+import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
+import { FirestorePermissionError } from "@/firebase/errors";
+import { errorEmitter } from "@/firebase/error-emitter";
 
 const DEFAULT_GOAL = 2000; // 2000 ml
 const DEFAULT_UNITS = "ml";
@@ -18,12 +21,22 @@ const DEFAULT_UNITS = "ml";
 /**
  * Gets or creates a user profile in Firestore.
  * If the user is new, it creates a profile with default values.
+ * @param firestore - The Firestore instance.
  * @param uid - The user's unique ID from Firebase Auth.
  * @returns The user's profile.
  */
-export async function getProfile(uid: string): Promise<UserProfile> {
-  const userDocRef = doc(db, "users", uid);
-  const userDocSnap = await getDoc(userDocRef);
+export async function getProfile(firestore: Firestore, uid: string): Promise<UserProfile> {
+  const userDocRef = doc(firestore, "users", uid);
+  const userDocSnap = await getDoc(userDocRef).catch(error => {
+    errorEmitter.emit(
+      'permission-error',
+      new FirestorePermissionError({
+        path: userDocRef.path,
+        operation: 'get',
+      })
+    );
+    throw error;
+  });
 
   if (userDocSnap.exists()) {
     return userDocSnap.data() as UserProfile;
@@ -32,62 +45,74 @@ export async function getProfile(uid: string): Promise<UserProfile> {
       dailyGoal: DEFAULT_GOAL,
       units: DEFAULT_UNITS,
     };
-    await setDoc(userDocRef, newProfile);
+    setDocumentNonBlocking(userDocRef, newProfile, { merge: false });
     return newProfile;
   }
 }
 
 /**
  * Updates a user's profile in Firestore.
+ * @param firestore - The Firestore instance.
  * @param uid - The user's unique ID.
  * @param data - The profile data to update.
  */
-export async function updateProfile(uid: string, data: Partial<UserProfile>): Promise<void> {
-  const userDocRef = doc(db, "users", uid);
-  await updateDoc(userDocRef, data);
+export async function updateProfile(firestore: Firestore, uid: string, data: Partial<UserProfile>): Promise<void> {
+  const userDocRef = doc(firestore, "users", uid);
+  updateDocumentNonBlocking(userDocRef, data);
 }
 
 /**
  * Gets the daily summary for the current day.
  * If no summary exists for today, it creates one based on the user's goal.
+ * @param firestore - The Firestore instance.
  * @param uid - The user's unique ID.
  * @returns The daily summary for today.
  */
-export async function getDailySummary(uid: string): Promise<DailySummary> {
+export async function getDailySummary(firestore: Firestore, uid: string): Promise<DailySummary> {
   const todayStr = getTodayDateString();
-  const summaryDocRef = doc(db, `users/${uid}/dailySummaries`, todayStr);
-  const summaryDocSnap = await getDoc(summaryDocRef);
+  const summaryDocRef = doc(firestore, `users/${uid}/dailySummaries`, todayStr);
+  const summaryDocSnap = await getDoc(summaryDocRef).catch(error => {
+     errorEmitter.emit(
+      'permission-error',
+      new FirestorePermissionError({
+        path: summaryDocRef.path,
+        operation: 'get',
+      })
+    );
+    throw error;
+  });
 
   if (summaryDocSnap.exists()) {
     return summaryDocSnap.data() as DailySummary;
   } else {
     // No summary for today, let's create one.
     // First, get the user's current goal.
-    const userProfile = await getProfile(uid);
+    const userProfile = await getProfile(firestore, uid);
     const newSummary: DailySummary = {
       totalIntake: 0,
       goal: userProfile.dailyGoal,
       date: todayStr,
     };
-    await setDoc(summaryDocRef, newSummary);
+    setDocumentNonBlocking(summaryDocRef, newSummary, { merge: false });
     return newSummary;
   }
 }
 
 /**
  * Logs a new water intake entry and updates the daily summary within a transaction.
+ * @param firestore - The Firestore instance.
  * @param uid - The user's unique ID.
  * @param amount - The amount of water consumed in ml.
  * @returns The updated daily summary.
  */
-export async function logWater(uid: string, amount: number): Promise<DailySummary> {
+export async function logWater(firestore: Firestore, uid: string, amount: number): Promise<DailySummary | undefined> {
   const todayStr = getTodayDateString();
-  const summaryDocRef = doc(db, `users/${uid}/dailySummaries`, todayStr);
-  const logsCollectionRef = collection(db, `users/${uid}/waterLogs`);
+  const summaryDocRef = doc(firestore, `users/${uid}/dailySummaries`, todayStr);
+  const logsCollectionRef = collection(firestore, `users/${uid}/waterLogs`);
   const newLogRef = doc(logsCollectionRef); // Create a new log doc with a random ID
 
   try {
-    const newSummary = await runTransaction(db, async (transaction) => {
+    const newSummary = await runTransaction(firestore, async (transaction) => {
       const summaryDoc = await transaction.get(summaryDocRef);
       
       let currentIntake = 0;
@@ -97,7 +122,7 @@ export async function logWater(uid: string, amount: number): Promise<DailySummar
         currentIntake = summaryDoc.data().totalIntake || 0;
         currentGoal = summaryDoc.data().goal || DEFAULT_GOAL;
       } else {
-         const userProfile = await getProfile(uid);
+         const userProfile = await getProfile(firestore, uid);
          currentGoal = userProfile.dailyGoal;
       }
 
@@ -121,8 +146,16 @@ export async function logWater(uid: string, amount: number): Promise<DailySummar
 
     return newSummary;
 
-  } catch (e) {
+  } catch (e: any) {
     console.error("Transaction failed: ", e);
-    throw e;
+    // This will be caught by the global error handler
+    errorEmitter.emit(
+      'permission-error',
+      new FirestorePermissionError({
+        path: summaryDocRef.path,
+        operation: 'write',
+        requestResourceData: { amount },
+      })
+    );
   }
 }
