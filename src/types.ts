@@ -6,14 +6,8 @@ export interface UserProfile {
   units: "ml" | "oz";
   remindersEnabled: boolean;
   reminderHours: number;
-}
-
-export interface DailySummary {
-  id: string;
-  userId: string;
-  totalIntake: number;
-  goal: number;
-  date: string; // YYYY-MM-DD
+  todayIntake: number;
+  lastLogDate: string; // YYYY-MM-DD
 }
 
 export interface WaterLog {

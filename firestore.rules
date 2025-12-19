@@ -1,11 +1,12 @@
+
 /**
  * Core Philosophy: This ruleset enforces a strict, user-centric data ownership model. All data, including hydration
  * logs and daily summaries, is stored in subcollections under a user's primary document. Access is granted only to the
  * authenticated owner of that data tree, ensuring complete privacy and isolation between users.
  *
  * Data Structure: The data is organized hierarchically under the `/users/{userId}` path. Each user owns their profile
- * document and two subcollections: `/waterLogs` for individual intake entries and `/dailySummaries` for aggregated daily
- * totals. This structure is highly optimized for simple, performant security rules.
+ * document and a subcollection for `waterLogs` for individual intake entries. The daily summary is now part of the
+ * user document itself. This structure is highly optimized for simple, performant security rules.
  *
  * Key Security Decisions:
  * - Default Deny: All paths are closed by default. Access is explicitly granted on a per-collection basis.
@@ -110,22 +111,6 @@ service cloud.firestore {
      * @principle Enforces strict data ownership within a user's private subcollection.
      */
     match /users/{userId}/waterLogs/{waterLogId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId) && hasCorrectOwnerIdOnCreate(userId);
-      allow update: if isExistingOwner(userId) && isOwnerIdImmutableOnUpdate();
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description Secures a user's private collection of daily water intake summaries.
-     * @path /users/{userId}/dailySummaries/{dailySummaryId}
-     * @allow (get, list, create, update, delete) An authenticated user manages their own daily summaries.
-     * @deny (list) A user attempts to list another user's daily summaries.
-     * @deny (update) A user attempts to update another user's daily summary.
-     * @principle Enforces strict data ownership within a user's private subcollection.
-     */
-    match /users/{userId}/dailySummaries/{dailySummaryId} {
       allow get: if isOwner(userId);
       allow list: if isOwner(userId);
       allow create: if isOwner(userId) && hasCorrectOwnerIdOnCreate(userId);

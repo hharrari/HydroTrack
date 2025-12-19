@@ -1,10 +1,11 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser, useFirebase } from "@/firebase";
-import { getProfile, getDailySummary, logWater } from "@/lib/firestore";
-import type { UserProfile, DailySummary } from "@/types";
+import { getProfile, logWater } from "@/lib/firestore";
+import type { UserProfile } from "@/types";
 import { Header } from "@/components/header";
 import { HydroProgress } from "@/components/hydro-progress";
 import { LogWaterDialog } from "@/components/log-water-dialog";
@@ -23,7 +24,6 @@ export default function Home() {
   const { toast } = useToast();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [summary, setSummary] = useState<DailySummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [isSettingsOpen, setSettingsOpen] = useState(false);
@@ -33,12 +33,8 @@ export default function Home() {
     if (!user || !firestore) return;
     try {
       setLoading(true);
-      const [profileData, summaryData] = await Promise.all([
-        getProfile(firestore, user.uid),
-        getDailySummary(firestore, user.uid),
-      ]);
+      const profileData = await getProfile(firestore, user.uid);
       setProfile(profileData);
-      setSummary(summaryData);
     } catch (error) {
       console.error("Error fetching data:", error);
       toast({
@@ -64,23 +60,23 @@ export default function Home() {
   }, [user, firestore, fetchData]);
 
   const handleLogWater = async (amount: number) => {
-    if (!user || !summary || !profile || !firestore) return;
+    if (!user || !profile || !firestore) return;
     const amountInMl =
       profile.units === "oz" ? Math.round(amount * 29.5735) : amount;
 
-    const oldSummary = { ...summary };
-    setSummary((prev) =>
-      prev ? { ...prev, totalIntake: prev.totalIntake + amountInMl } : null
+    const oldIntake = profile.todayIntake;
+    setProfile((prev) =>
+      prev ? { ...prev, todayIntake: prev.todayIntake + amountInMl } : null
     );
 
     try {
-      const newSummary = await logWater(firestore, user.uid, amountInMl);
-      if (newSummary) {
-        setSummary(newSummary);
+      const newProfile = await logWater(firestore, user.uid, amountInMl);
+      if (newProfile) {
+        setProfile(newProfile);
       }
     } catch (error) {
       console.error("Error logging water:", error);
-      setSummary(oldSummary);
+      setProfile((prev) => (prev ? { ...prev, todayIntake: oldIntake } : null));
       toast({
         title: "Error",
         description: "Could not save your progress. Please try again.",
@@ -89,7 +85,7 @@ export default function Home() {
     }
   };
 
-  if (isUserLoading || loading || !profile || !summary) {
+  if (isUserLoading || loading || !profile) {
     return <LoadingSkeleton />;
   }
 
@@ -109,13 +105,13 @@ export default function Home() {
               </CardHeader>
               <CardContent className="flex flex-col items-center gap-6 p-6">
                 <HydroProgress
-                  value={summary.totalIntake}
+                  value={profile.todayIntake}
                   goal={profile.dailyGoal}
                   units={profile.units}
                 />
                 <div className="text-center">
                   <p className="text-4xl font-bold text-primary">
-                    {summary.totalIntake.toLocaleString()}
+                    {profile.todayIntake.toLocaleString()}
                     <span className="text-lg font-medium text-muted-foreground ml-1">
                       / {profile.dailyGoal.toLocaleString()} {profile.units}
                     </span>
@@ -170,7 +166,7 @@ export default function Home() {
         currentProfile={profile}
         onUpdate={(newProfile) => {
           setProfile(newProfile);
-          fetchData(); // re-fetch summary in case goal changed
+          fetchData(); // re-fetch data
         }}
       />
       <LogWaterDialog

@@ -9,9 +9,10 @@ import {
   collection,
   writeBatch,
   Firestore,
+  increment,
 } from "firebase/firestore";
 import { getTodayDateString } from "./utils";
-import type { UserProfile, DailySummary } from "@/types";
+import type { UserProfile } from "@/types";
 import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 import { FirestorePermissionError } from "@/firebase/errors";
 import { errorEmitter } from "@/firebase/error-emitter";
@@ -22,14 +23,43 @@ const DEFAULT_UNITS = "ml";
 /**
  * Gets or creates a user profile in Firestore.
  * If the user is new, it creates a profile with default values.
+ * If it's a new day, it resets the daily intake.
  * @param firestore - The Firestore instance.
  * @param uid - The user's unique ID from Firebase Auth.
  * @returns The user's profile.
  */
 export async function getProfile(firestore: Firestore, uid: string): Promise<UserProfile> {
   const userDocRef = doc(firestore, "users", uid);
-  const userDocSnap = await getDoc(userDocRef).catch(error => {
-    errorEmitter.emit(
+  const todayStr = getTodayDateString();
+
+  try {
+    const userDocSnap = await getDoc(userDocRef);
+
+    if (userDocSnap.exists()) {
+      const profile = userDocSnap.data() as UserProfile;
+      // If the last log was not today, reset the intake for the new day.
+      if (profile.lastLogDate !== todayStr) {
+        const updatedProfile = { ...profile, todayIntake: 0, lastLogDate: todayStr };
+        updateDocumentNonBlocking(userDocRef, { todayIntake: 0, lastLogDate: todayStr });
+        return updatedProfile;
+      }
+      return profile;
+    } else {
+      const newProfile: UserProfile = {
+        id: uid,
+        email: '', // email will be set on creation
+        dailyGoal: DEFAULT_GOAL,
+        units: DEFAULT_UNITS,
+        remindersEnabled: false,
+        reminderHours: 2,
+        todayIntake: 0,
+        lastLogDate: todayStr,
+      };
+      setDocumentNonBlocking(userDocRef, newProfile, { merge: false });
+      return newProfile;
+    }
+  } catch (error) {
+     errorEmitter.emit(
       'permission-error',
       new FirestorePermissionError({
         path: userDocRef.path,
@@ -37,21 +67,6 @@ export async function getProfile(firestore: Firestore, uid: string): Promise<Use
       })
     );
     throw error;
-  });
-
-  if (userDocSnap.exists()) {
-    return userDocSnap.data() as UserProfile;
-  } else {
-    const newProfile: UserProfile = {
-      id: uid,
-      email: '', // email will be set on creation
-      dailyGoal: DEFAULT_GOAL,
-      units: DEFAULT_UNITS,
-      remindersEnabled: false,
-      reminderHours: 2,
-    };
-    setDocumentNonBlocking(userDocRef, newProfile, { merge: false });
-    return newProfile;
   }
 }
 
@@ -66,105 +81,63 @@ export async function updateProfile(firestore: Firestore, uid: string, data: Par
   updateDocumentNonBlocking(userDocRef, data);
 }
 
-/**
- * Gets the daily summary for the current day.
- * If no summary exists for today, it creates one based on the user's goal.
- * @param firestore - The Firestore instance.
- * @param uid - The user's unique ID.
- * @returns The daily summary for today.
- */
-export async function getDailySummary(firestore: Firestore, uid: string): Promise<DailySummary> {
-  const todayStr = getTodayDateString();
-  const summaryDocRef = doc(firestore, `users/${uid}/dailySummaries`, todayStr);
-  const summaryDocSnap = await getDoc(summaryDocRef).catch(error => {
-     errorEmitter.emit(
-      'permission-error',
-      new FirestorePermissionError({
-        path: summaryDocRef.path,
-        operation: 'get',
-      })
-    );
-    throw error;
-  });
-
-  if (summaryDocSnap.exists()) {
-    return summaryDocSnap.data() as DailySummary;
-  } else {
-    // No summary for today, let's create one.
-    // First, get the user's current goal.
-    const userProfile = await getProfile(firestore, uid);
-    const newSummary: DailySummary = {
-      id: todayStr,
-      userId: uid,
-      totalIntake: 0,
-      goal: userProfile.dailyGoal,
-      date: todayStr,
-    };
-    setDocumentNonBlocking(summaryDocRef, newSummary, { merge: false });
-    return newSummary;
-  }
-}
 
 /**
  * Logs a new water intake entry and updates the daily summary within a transaction.
  * @param firestore - The Firestore instance.
  * @param uid - The user's unique ID.
  * @param amount - The amount of water consumed in ml.
- * @returns The updated daily summary.
+ * @returns The updated user profile.
  */
-export async function logWater(firestore: Firestore, uid: string, amount: number): Promise<DailySummary | undefined> {
-  const todayStr = getTodayDateString();
-  const summaryDocRef = doc(firestore, `users/${uid}/dailySummaries`, todayStr);
+export async function logWater(firestore: Firestore, uid: string, amount: number): Promise<UserProfile | undefined> {
+  const userDocRef = doc(firestore, "users", uid);
   const logsCollectionRef = collection(firestore, `users/${uid}/waterLogs`);
   const newLogRef = doc(logsCollectionRef); // Create a new log doc with a random ID
+  const todayStr = getTodayDateString();
 
   try {
-    const newSummary = await runTransaction(firestore, async (transaction) => {
-      const summaryDoc = await transaction.get(summaryDocRef);
-      
-      let currentIntake = 0;
-      let currentGoal = DEFAULT_GOAL;
-
-      if (summaryDoc.exists()) {
-        currentIntake = summaryDoc.data().totalIntake || 0;
-        currentGoal = summaryDoc.data().goal || DEFAULT_GOAL;
-      } else {
-         const userProfile = await getProfile(firestore, uid);
-         currentGoal = userProfile.dailyGoal;
+    const updatedProfile = await runTransaction(firestore, async (transaction) => {
+      const userDoc = await transaction.get(userDocRef);
+      if (!userDoc.exists()) {
+        throw "Document does not exist!";
       }
 
-      const newTotalIntake = currentIntake + amount;
+      const currentProfile = userDoc.data() as UserProfile;
       
-      const updatedSummaryData: DailySummary = { 
-        id: todayStr,
-        userId: uid,
-        totalIntake: newTotalIntake, 
-        goal: currentGoal,
-        date: todayStr
-      };
+      // If the last log was not today, reset before incrementing
+      const currentIntake = currentProfile.lastLogDate === todayStr ? currentProfile.todayIntake : 0;
+      const newTotalIntake = currentIntake + amount;
 
-      // Set/update summary and add new log entry
-      transaction.set(summaryDocRef, updatedSummaryData, { merge: true });
+      // Update user profile with new total and date
+      transaction.update(userDocRef, { 
+        todayIntake: newTotalIntake,
+        lastLogDate: todayStr
+      });
+      
+      // Create new water log entry
       transaction.set(newLogRef, {
         userId: uid,
         amount,
         timestamp: serverTimestamp(),
       });
       
-      return updatedSummaryData;
+      return {
+        ...currentProfile,
+        todayIntake: newTotalIntake,
+        lastLogDate: todayStr,
+      };
     });
 
-    return newSummary;
+    return updatedProfile;
 
   } catch (e: any) {
     console.error("Transaction failed: ", e);
-    // This will be caught by the global error handler
     errorEmitter.emit(
       'permission-error',
       new FirestorePermissionError({
-        path: summaryDocRef.path,
+        path: userDocRef.path,
         operation: 'write',
-        requestResourceData: { amount },
+        requestResourceData: { todayIntake: increment(amount) },
       })
     );
   }
