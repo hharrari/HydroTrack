@@ -1,3 +1,4 @@
+
 import {
   doc,
   getDoc,
@@ -42,6 +43,8 @@ export async function getProfile(firestore: Firestore, uid: string): Promise<Use
     return userDocSnap.data() as UserProfile;
   } else {
     const newProfile: UserProfile = {
+      id: uid,
+      email: '', // email will be set on creation
       dailyGoal: DEFAULT_GOAL,
       units: DEFAULT_UNITS,
     };

@@ -1,4 +1,7 @@
+
 export interface UserProfile {
+  id: string;
+  email: string;
   dailyGoal: number;
   units: "ml" | "oz";
 }

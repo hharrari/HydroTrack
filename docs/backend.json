@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "User": {
@@ -15,15 +16,23 @@
           "description": "User's email address.",
           "format": "email"
         },
-        "dailyGoalOz": {
+        "dailyGoal": {
           "type": "number",
           "description": "User's daily hydration goal in ounces."
+        },
+        "units": {
+          "type": "string",
+          "enum": [
+            "ml",
+            "oz"
+          ]
         }
       },
       "required": [
         "id",
         "email",
-        "dailyGoalOz"
+        "dailyGoal",
+        "units"
       ]
     },
     "WaterLog": {
@@ -45,7 +54,7 @@
           "description": "Timestamp of when the water intake was logged.",
           "format": "date-time"
         },
-        "amountOz": {
+        "amount": {
           "type": "number",
           "description": "Amount of water consumed in ounces."
         }
@@ -54,7 +63,7 @@
         "id",
         "userId",
         "timestamp",
-        "amountOz"
+        "amount"
       ]
     },
     "DailySummary": {
@@ -76,16 +85,21 @@
           "description": "The date for which the summary is generated (YYYY-MM-DD).",
           "format": "date-time"
         },
-        "totalIntakeOz": {
+        "totalIntake": {
           "type": "number",
           "description": "Total water intake for the day in ounces."
+        },
+        "goal": {
+          "type": "number",
+          "description": "The user's goal for the day."
         }
       },
       "required": [
         "id",
         "userId",
         "date",
-        "totalIntakeOz"
+        "totalIntake",
+        "goal"
       ]
     }
   },
